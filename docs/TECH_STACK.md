@@ -77,8 +77,9 @@ dependencies = [
 
 | Component | Technology | Version | Notes |
 |-----------|------------|---------|-------|
-| **Orchestration** | LangChain | `1.2.7` | LLM application framework |
-| **Primary LLM** | Gemini 3.0 Flash | Latest | Low-latency recipe generation (~200ms) |
+| **Orchestration** | LangChain | `1.2.7` | Agentic workflow management |
+| **Primary LLM** | Gemini 3.0 Flash | Latest | Low-latency generation |
+| **Grounding** | Google Search | Vertex AI | Real-time web validation |
 | **Embeddings** | Gemini Embeddings | `text-embedding-005` | 768-dimensional vectors |
 | **Guardrails** | LangChain Safety | `1.2.7` | Content filtering, allergen detection |
 | **Prompt Management** | LangSmith | `0.3.0` | Prompt versioning, A/B testing |

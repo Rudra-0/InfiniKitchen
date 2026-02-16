@@ -34,13 +34,15 @@ Drag-and-drop cooking canvas with Flame Engine physics:
 ### Pipeline Flow
 
 ```
-Ingredient Hash → Redis Cache → pgvector Search → Gemini Generation
+Ingredient Hash → Redis Cache → Agentic Router → [Vector DB + Google Search] → Gemini Generation
 ```
 
-1. **Hash Generation**: `MD5(sorted(lowercase(ingredients)))`
-2. **Cache Check**: O(1) Redis lookup, 30-day TTL
-3. **Vector Search**: pgvector similarity > 0.85
-4. **LLM Generation**: Gemini 3.0 Flash on cache miss
+1.  **Hash Generation**: `MD5(sorted(lowercase(ingredients)))`
+2.  **Cache Check**: O(1) Redis lookup, 30-day TTL
+3.  **Agentic Routing**:
+    -   *Standard*: Query `pgvector` for similar recipes.
+    -   *Novel/Exotic*: Trigger **Google Search Grounding** to validate odd pairings or find regional authenticity.
+4.  **Synthesis**: Gemini 3.0 Flash synthesizes data from DB and Web into a structured recipe.
 
 ---
 
