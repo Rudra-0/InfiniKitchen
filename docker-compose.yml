@@ -1,0 +1,44 @@
+version: '3.9'
+
+services:
+  db:
+    image: ankane/pgvector:v0.8.0 # PostgreSQL 17 + pgvector 0.8.0
+    container_name: infinikitchen_db
+    environment:
+      POSTGRES_USER: infinikitchen
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: kitchen_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - infinikitchen_net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U infinikitchen -d kitchen_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: infinikitchen_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - infinikitchen_net
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  infinikitchen_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

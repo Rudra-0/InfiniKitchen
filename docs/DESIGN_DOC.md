@@ -111,14 +111,17 @@ async def generate_recipe(
 
 ### 5.2 Key User Flows
 
-#### **A. The Discovery Flow (Main Loop)**
-1.  **Input**: User enters Kitchen Mode.
-2.  **Action**: Drags "Tomato", "Basil", "Garlic" into the pot.
-3.  **Interaction**: Swipes to crush garlic, chop tomato.
-4.  **Trigger**: Taps "Dream Up Recipe".
-5.  **Feedback**: "Thinking..." animation (Bubbling pot).
-6.  **Result**: "Rustic Tomato Basil Soup" card appears.
-7.  **Closure**: User saves to Cookbook or shares.
+#### **A. The Infinite Craft Discovery Loop**
+1.  **Layout**:
+    -   **Left**: The Playground (Flame Game).
+    -   **Right**: The Ingredient Sidebar (Scrollable, Searchable).
+2.  **Action**: User drags ingredients from Sidebar -> Playground.
+3.  **Combine**: User drags Ingredient A on top of Ingredient B.
+4.  **Reaction**: Physics collision occurs -> Backend checks recipe.
+5.  **Discovery**:
+    -   If valid combo: A new Ingredient C spawns.
+    -   **Unlock**: Ingredient C is permanently added to the backend sidebar for future use.
+6.  **Closure**: User can clear the playground but keep their discoveries in the sidebar.
 
 #### **B. The Safety Check Flow**
 1.  **Context**: Ingredient added (e.g., "Peanut Oil").
@@ -127,9 +130,9 @@ async def generate_recipe(
 4.  **Resolution**: User can "Substitute" (Auto-swap to Vegetable Oil) or "Remove".
 
 ### 5.3 Feedback Mechanisms
--   **Haptic Feedback**: On chopping or collision events.
--   **Toast Notifications**: For save confirmations or API errors.
--   **Skeleton Loaders**: During AI generation latency (approx 2-3s).
+-   **Haptic Feedback**: On collision and successful discovery.
+-   **Toast Notifications**: "You discovered [Element]!"
+-   **Skeleton Loaders**: During AI generation latency.
 
 ---
 

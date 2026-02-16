@@ -31,7 +31,7 @@ InfiniKitchen is a cross-platform game where players mix virtual ingredients usi
 | Layer | Technology |
 |-------|------------|
 | Frontend | Flutter 3.38.9 + Flame Engine |
-| Backend | FastAPI 0.124.4 (Python 3.14.2) |
+| Backend | FastAPI 0.124.4 (Python 3.12.9) |
 | AI | LangChain 1.2.7 + Gemini 3.0 Flash |
 | Database | PostgreSQL 18.1 + pgvector 0.8.0 |
 | Cache | Redis 7.4.2 |

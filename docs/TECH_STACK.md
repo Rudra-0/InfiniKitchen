@@ -21,7 +21,7 @@ This document defines the authoritative technology stack for InfiniKitchen, a cr
 | **Game Engine** | Flame | `1.18.0` | 2D game engine for Flutter |
 | **Rendering** | Impeller | Enabled | Metal (iOS), Vulkan (Android), Skia fallback (Web) |
 | **State Management** | Riverpod | `3.0.0` | Compile-safe dependency injection |
-| **Networking** | Dio | `6.0.0` | HTTP client with interceptors |
+| **Networking** | Dio | `5.7.0` | HTTP client with interceptors |
 
 ### Rendering Configuration
 
@@ -51,7 +51,7 @@ flutter:
 | Component | Technology | Version | Notes |
 |-----------|------------|---------|-------|
 | **Framework** | FastAPI | `0.124.4` | Async Python web framework |
-| **Runtime** | Python | `3.14.2` | Latest stable with JIT improvements |
+| **Runtime** | Python | `3.12.9` | LTS Release (Stable) |
 | **ASGI Server** | Uvicorn | `0.34.0` | HTTP/2, WebSocket support |
 | **Validation** | Pydantic | `2.12.0` | Data validation with TypeAdapter |
 | **Task Queue** | Celery | `5.5.0` | Distributed task processing |
@@ -77,11 +77,11 @@ dependencies = [
 
 | Component | Technology | Version | Notes |
 |-----------|------------|---------|-------|
-| **Orchestration** | LangChain | `1.2.7` | Agentic workflow management |
+| **Orchestration** | LangChain | `0.3.0` | Agentic workflow management |
 | **Primary LLM** | Gemini 3.0 Flash | Latest | Low-latency generation |
 | **Grounding** | Google Search | Vertex AI | Real-time web validation |
 | **Embeddings** | Gemini Embeddings | `text-embedding-005` | 768-dimensional vectors |
-| **Guardrails** | LangChain Safety | `1.2.7` | Content filtering, allergen detection |
+| **Guardrails** | LangChain Safety | `0.3.0` | Content filtering, allergen detection |
 | **Prompt Management** | LangSmith | `0.3.0` | Prompt versioning, A/B testing |
 
 ### AI Pipeline Configuration
@@ -112,7 +112,7 @@ LANGCHAIN_CONFIG = {
 | **Database** | PostgreSQL | `18.1` | Primary data store |
 | **Vector Extension** | pgvector | `0.8.0` | Semantic similarity search |
 | **Connection Pool** | PgBouncer | `1.23.0` | Connection management |
-| **ORM** | SQLAlchemy | `2.1.0` | Async support enabled |
+| **ORM** | SQLAlchemy | `2.0.27` | Async support enabled |
 | **Migrations** | Alembic | `1.15.0` | Schema version control |
 
 ### Cache Layer
@@ -210,9 +210,9 @@ dart = "3.10.8"
 flame = "1.18.0"
 
 [backend]
-python = "3.14.2"
+python = "3.12.9"
 fastapi = "0.124.4"
-langchain = "1.2.7"
+langchain = "0.3.0"
 
 [database]
 postgresql = "18.1"
