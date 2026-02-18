@@ -1,0 +1,979 @@
+/**
+ * 猜百科游戏相关路由
+ */
+
+import { generateUniqueWord, fetchContent } from '../services/wordGenerator.js';
+
+export function registerGuessRoutes(fastify, { db, authenticateUser, aiConfig }) {
+    
+    // 生成/获取题目
+    fastify.route({
+        method: 'GET',
+        url: '/guess/:str',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            const { str } = request.params;
+            
+            if (!str || str.trim().length === 0) {
+                return reply.code(400).send({ error: '请提供有效的字符串' });
+            }
+            
+            try {
+                // 检查该字符串对应的题目是否已存在
+                let question = await db.get(
+                    'SELECT * FROM guess_questions WHERE seed_string = ?',
+                    [str]
+                );
+                
+                if (!question) {
+                    // 检查是否为今天的日期格式 (YYYY-MM-DD)
+                    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+                    const isDateFormat = datePattern.test(str);
+                    
+                    // 获取今天的日期
+                    const today = new Date();
+                    const todayStr = today.getFullYear() + '-' + 
+                                     String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                                     String(today.getDate()).padStart(2, '0');
+                    
+                    const isTodayDate = isDateFormat && str === todayStr;
+                    const isMcKeyword = str.startsWith('mc-');
+                    
+                    if (!isTodayDate) {
+                        // 非今日日期的关键词需要预先生成
+                        const message = isMcKeyword 
+                            ? `Minecraft 题目需要管理员预先生成。该关键词 "${str}" 尚未生成。`
+                            : `该关键词的题目尚未生成。只有今日日期（${todayStr}）可以自动生成题目，其他关键词请联系管理员预先生成。`;
+                        
+                        return reply.code(404).send({ 
+                            error: '题目不存在', 
+                            message: message
+                        });
+                    }
+                    
+                    // 今日日期可以自动生成新题目
+                    console.log(`🎮 为今日日期 "${str}" 生成新题目...`);
+                    
+                    // 1. 生成词汇（mc- 开头则不需要）
+                    const word = str.startsWith('mc-') ? 'minecraft-random' : await generateUniqueWord(str, db, aiConfig);
+                    
+                    // 2. 获取内容（根据前缀判断来源）
+                    const { title, description } = await fetchContent(str, word, db);
+                    
+                    // 3. 存入数据库
+                    await db.run(
+                        `INSERT INTO guess_questions (seed_string, word, title, description, created_at) 
+                         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                        [str, word, title, description]
+                    );
+                    
+                    question = await db.get(
+                        'SELECT * FROM guess_questions WHERE seed_string = ?',
+                        [str]
+                    );
+                    
+                    console.log(`✅ 题目生成成功: ${word}`);
+                }
+                
+                // 获取用户对该题目的猜测记录
+                const guessesRaw = await db.all(
+                    `SELECT character, position, content_position, is_in_title, created_at 
+                     FROM guess_records 
+                     WHERE user_id = ? AND question_id = ? 
+                     ORDER BY created_at ASC`,
+                    [user.id, question.id]
+                );
+                
+                // 转换字符串位置为数组
+                const guesses = guessesRaw.map(g => ({
+                    character: g.character,
+                    position: g.position ? g.position.split(',').filter(p => p).map(Number) : [],
+                    content_position: g.content_position ? g.content_position.split(',').filter(p => p).map(Number) : [],
+                    is_in_title: g.is_in_title,
+                    created_at: g.created_at
+                }));
+                
+                // 遮挡内容：除标点符号、英文冒号、空格、连字符、下划线外全部替换为 ■（包括中文引号 \u2018-\u201F）
+                const maskedTitle = question.title.replace(/[^\u3000-\u303F\uFF00-\uFFEF\u2018-\u201F: \-_]/g, '■');
+                const maskedDescription = question.description.replace(/[^\u3000-\u303F\uFF00-\uFFEF\u2018-\u201F: \-_]/g, '■');
+                
+                // 检查用户是否已完成该题目
+                const userCompleted = await db.get(
+                    'SELECT * FROM guess_results WHERE user_id = ? AND question_id = ?',
+                    [user.id, question.id]
+                );
+                
+                // 获取排行榜（完成该题目的前10名）
+                const leaderboard = await db.all(
+                    `SELECT u.username, gr.guess_count, gr.completed_at 
+                     FROM guess_results gr
+                     JOIN users u ON gr.user_id = u.id
+                     WHERE gr.question_id = ? 
+                     ORDER BY gr.guess_count ASC, gr.completed_at ASC
+                     LIMIT 10`,
+                    [question.id]
+                );
+                
+                // 只有完成的用户才能看到答案和原始内容
+                const responseData = {
+                    question: {
+                        id: question.id,
+                        seedString: question.seed_string,
+                        title: maskedTitle,
+                        description: maskedDescription,
+                    },
+                    guesses: guesses,
+                    leaderboard: leaderboard,
+                    isCompleted: !!userCompleted
+                };
+                
+                // 只有完成的用户才返回答案
+                if (userCompleted) {
+                    responseData.question.word = question.word;
+                    responseData.question.originalTitle = question.title;
+                    responseData.question.originalDescription = question.description;
+                }
+                
+                return responseData;
+                
+            } catch (error) {
+                console.error('生成/获取题目失败:', error);
+                return reply.code(500).send({ 
+                    error: '生成题目失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 提交猜测（单个字符）
+    fastify.route({
+        method: 'POST',
+        url: '/guess/:questionId/submit',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            const { questionId } = request.params;
+            const { character } = request.body;
+            
+            if (!character || character.length !== 1) {
+                return reply.code(400).send({ error: '请提供单个汉字' });
+            }
+            
+            // 检查是否包含英文或空格
+            if (/[a-zA-Z\s]/.test(character)) {
+                return reply.code(400).send({ error: '不能输入英文或空格' });
+            }
+            
+            try {
+                // 获取题目
+                const question = await db.get(
+                    'SELECT * FROM guess_questions WHERE id = ?',
+                    [questionId]
+                );
+                
+                if (!question) {
+                    return reply.code(404).send({ error: '题目不存在' });
+                }
+                
+                // 检查是否已经猜过这个字
+                const existing = await db.get(
+                    'SELECT * FROM guess_records WHERE user_id = ? AND question_id = ? AND character = ?',
+                    [user.id, questionId, character]
+                );
+                
+                if (existing) {
+                    return reply.code(400).send({ error: '该字符已经猜过了' });
+                }
+                
+                // 检查字符是否在标题和内容中
+                const titlePositions = [];
+                const contentPositions = [];
+                const isInTitle = question.title.includes(character);
+                const isInContent = question.description.includes(character);
+                
+                if (isInTitle) {
+                    // 找出标题中所有位置
+                    for (let i = 0; i < question.title.length; i++) {
+                        if (question.title[i] === character) {
+                            titlePositions.push(i);
+                        }
+                    }
+                }
+                
+                if (isInContent) {
+                    // 找出内容中所有位置
+                    for (let i = 0; i < question.description.length; i++) {
+                        if (question.description[i] === character) {
+                            contentPositions.push(i);
+                        }
+                    }
+                }
+                
+                // 记录猜测（position存标题位置，content_position存内容位置）
+                await db.run(
+                    `INSERT INTO guess_records (user_id, question_id, character, is_in_title, position, content_position, created_at) 
+                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                    [user.id, questionId, character, isInTitle ? 1 : 0, titlePositions.join(','), contentPositions.join(',')]
+                );
+                
+                // 检查是否完成（标题所有字符都猜对）
+                const guessedChars = await db.all(
+                    'SELECT DISTINCT character FROM guess_records WHERE user_id = ? AND question_id = ? AND is_in_title = 1',
+                    [user.id, questionId]
+                );
+                
+                const guessedSet = new Set(guessedChars.map(g => g.character));
+                const titleChars = new Set(question.title.split('').filter(c => /[\u4e00-\u9fff]/.test(c)));
+                
+                const isCompleted = Array.from(titleChars).every(c => guessedSet.has(c));
+                
+                if (isCompleted) {
+                    // 计算总猜测次数
+                    const totalGuesses = await db.get(
+                        'SELECT COUNT(*) as count FROM guess_records WHERE user_id = ? AND question_id = ?',
+                        [user.id, questionId]
+                    );
+                    
+                    // 检查是否已记录结果
+                    const existingResult = await db.get(
+                        'SELECT * FROM guess_results WHERE user_id = ? AND question_id = ?',
+                        [user.id, questionId]
+                    );
+                    
+                    if (!existingResult) {
+                        await db.run(
+                            `INSERT INTO guess_results (user_id, question_id, guess_count, completed_at) 
+                             VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+                            [user.id, questionId, totalGuesses.count]
+                        );
+                    }
+                }
+                
+                const responseData = {
+                    success: true,
+                    character: character,
+                    isInTitle: isInTitle,
+                    titlePositions: titlePositions,
+                    isInContent: isInContent,
+                    contentPositions: contentPositions,
+                    isCompleted: isCompleted
+                };
+                
+                // 如果完成，返回完整题目信息
+                if (isCompleted) {
+                    responseData.question = {
+                        word: question.word,
+                        originalTitle: question.title,
+                        originalDescription: question.description
+                    };
+                }
+                
+                return responseData;
+                
+            } catch (error) {
+                console.error('提交猜测失败:', error);
+                return reply.code(500).send({ 
+                    error: '提交失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 批量提交猜测（用于页面刷新时恢复状态）
+    fastify.route({
+        method: 'POST',
+        url: '/guess/:questionId/batch-submit',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            const { questionId } = request.params;
+            const { characters } = request.body;
+            
+            if (!Array.isArray(characters) || characters.length === 0) {
+                return reply.code(400).send({ error: '请提供字符数组' });
+            }
+            
+            try {
+                const question = await db.get(
+                    'SELECT * FROM guess_questions WHERE id = ?',
+                    [questionId]
+                );
+                
+                if (!question) {
+                    return reply.code(404).send({ error: '题目不存在' });
+                }
+                
+                const results = [];
+                
+                for (const character of characters) {
+                    if (character.length !== 1) continue;
+                    
+                    // 检查是否已经猜过
+                    const existing = await db.get(
+                        'SELECT * FROM guess_records WHERE user_id = ? AND question_id = ? AND character = ?',
+                        [user.id, questionId, character]
+                    );
+                    
+                    if (existing) {
+                        results.push({
+                            character: character,
+                            isInTitle: existing.is_in_title === 1,
+                            titlePositions: existing.position ? existing.position.split(',').map(Number) : [],
+                            isInContent: existing.content_position && existing.content_position.length > 0,
+                            contentPositions: existing.content_position ? existing.content_position.split(',').map(Number) : []
+                        });
+                        continue;
+                    }
+                    
+                    // 新的猜测
+                    const titlePositions = [];
+                    const contentPositions = [];
+                    const isInTitle = question.title.includes(character);
+                    const isInContent = question.description.includes(character);
+                    
+                    if (isInTitle) {
+                        for (let i = 0; i < question.title.length; i++) {
+                            if (question.title[i] === character) {
+                                titlePositions.push(i);
+                            }
+                        }
+                    }
+                    
+                    if (isInContent) {
+                        for (let i = 0; i < question.description.length; i++) {
+                            if (question.description[i] === character) {
+                                contentPositions.push(i);
+                            }
+                        }
+                    }
+                    
+                    await db.run(
+                        `INSERT INTO guess_records (user_id, question_id, character, is_in_title, position, content_position, created_at) 
+                         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                        [user.id, questionId, character, isInTitle ? 1 : 0, titlePositions.join(','), contentPositions.join(',')]
+                    );
+                    
+                    results.push({
+                        character: character,
+                        isInTitle: isInTitle,
+                        titlePositions: titlePositions,
+                        isInContent: isInContent,
+                        contentPositions: contentPositions
+                    });
+                }
+                
+                return {
+                    success: true,
+                    results: results
+                };
+                
+            } catch (error) {
+                console.error('批量提交失败:', error);
+                return reply.code(500).send({ 
+                    error: '批量提交失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 获取所有已生成题目的种子列表
+    fastify.route({
+        method: 'GET',
+        url: '/guess/seeds',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            try {
+                const seeds = await db.all(
+                    `SELECT seed_string, created_at,
+                            (SELECT COUNT(*) FROM guess_results WHERE question_id = gq.id) as completed_count
+                     FROM guess_questions gq
+                     ORDER BY created_at DESC`
+                );
+                
+                return {
+                    seeds: seeds.map(s => ({
+                        seedString: s.seed_string,
+                        completedCount: s.completed_count,
+                        createdAt: s.created_at
+                    }))
+                };
+                
+            } catch (error) {
+                console.error('获取种子列表失败:', error);
+                return reply.code(500).send({ 
+                    error: '获取种子列表失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 获取用户的游戏历史
+    fastify.route({
+        method: 'GET',
+        url: '/guess/history',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            try {
+                const history = await db.all(
+                    `SELECT 
+                        gq.id, gq.seed_string, 
+                        CASE WHEN gr.guess_count IS NOT NULL THEN gq.word ELSE NULL END as word,
+                        CASE WHEN gr.guess_count IS NOT NULL THEN gq.title ELSE NULL END as title,
+                        gr.guess_count, gr.completed_at,
+                        (SELECT COUNT(*) FROM guess_records WHERE user_id = ? AND question_id = gq.id) as attempts
+                     FROM guess_questions gq
+                     LEFT JOIN guess_results gr ON gq.id = gr.question_id AND gr.user_id = ?
+                     WHERE gq.id IN (
+                         SELECT DISTINCT question_id FROM guess_records WHERE user_id = ?
+                     )
+                     ORDER BY gr.completed_at DESC, gq.created_at DESC`,
+                    [user.id, user.id, user.id]
+                );
+                
+                return {
+                    history: history
+                };
+                
+            } catch (error) {
+                console.error('获取历史失败:', error);
+                return reply.code(500).send({ 
+                    error: '获取历史失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 管理接口：预生成题目
+    fastify.route({
+        method: 'POST',
+        url: '/admin/guess/generate',
+        handler: async (request, reply) => {
+            const ADMIN_KEY = process.env.ADMIN_KEY || '';
+            const adminKey = request.headers.authorization?.replace('Bearer ', '');
+
+            if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
+                return reply.code(401).send({ error: '未经授权' });
+            }
+
+            const { seedString } = request.body;
+            
+            if (!seedString || seedString.trim().length === 0) {
+                return reply.code(400).send({ error: '请提供种子字符串' });
+            }
+            
+            try {
+                // 检查是否已存在
+                const existing = await db.get(
+                    'SELECT * FROM guess_questions WHERE seed_string = ?',
+                    [seedString]
+                );
+                
+                if (existing) {
+                    return reply.code(400).send({ 
+                        error: '题目已存在', 
+                        question: existing 
+                    });
+                }
+                
+                console.log(`🔧 [管理员] 为关键词 "${seedString}" 生成题目...`);
+                
+                // 1. 生成词汇（mc- 开头则不需要）
+                const word = seedString.startsWith('mc-') ? 'minecraft-random' : await generateUniqueWord(seedString, db, aiConfig);
+                
+                // 2. 获取内容（根据前缀判断来源）
+                const { title, description } = await fetchContent(seedString, word, db);
+                
+                // 3. 存入数据库
+                await db.run(
+                    `INSERT INTO guess_questions (seed_string, word, title, description, created_at) 
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                    [seedString, word, title, description]
+                );
+                
+                const question = await db.get(
+                    'SELECT * FROM guess_questions WHERE seed_string = ?',
+                    [seedString]
+                );
+                
+                console.log(`✅ [管理员] 题目生成成功: ${word}`);
+                
+                return {
+                    success: true,
+                    message: '题目生成成功',
+                    question: question
+                };
+                
+            } catch (error) {
+                console.error('❌ [管理员] 生成题目失败:', error);
+                return reply.code(500).send({ 
+                    error: '生成题目失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 管理接口：批量生成题目
+    fastify.route({
+        method: 'POST',
+        url: '/admin/guess/batch-generate',
+        handler: async (request, reply) => {
+            const ADMIN_KEY = process.env.ADMIN_KEY || '';
+            const adminKey = request.headers.authorization?.replace('Bearer ', '');
+
+            if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
+                return reply.code(401).send({ error: '未经授权' });
+            }
+
+            const { seedStrings } = request.body;
+            
+            if (!Array.isArray(seedStrings) || seedStrings.length === 0) {
+                return reply.code(400).send({ error: '请提供种子字符串数组' });
+            }
+            
+            const results = {
+                success: [],
+                failed: [],
+                skipped: []
+            };
+            
+            for (const seedString of seedStrings) {
+                try {
+                    // 检查是否已存在
+                    const existing = await db.get(
+                        'SELECT * FROM guess_questions WHERE seed_string = ?',
+                        [seedString]
+                    );
+                    
+                    if (existing) {
+                        results.skipped.push({
+                            seedString,
+                            reason: '题目已存在'
+                        });
+                        continue;
+                    }
+                    
+                    console.log(`🔧 [管理员] 批量生成: "${seedString}"...`);
+                    
+                    // 生成词汇（mc- 开头则不需要）
+                    const word = seedString.startsWith('mc-') ? 'minecraft-random' : await generateUniqueWord(seedString, db, aiConfig);
+                    
+                    // 获取内容（根据前缀判断来源）
+                    const { title, description } = await fetchContent(seedString, word, db);
+                    
+                    // 存入数据库
+                    await db.run(
+                        `INSERT INTO guess_questions (seed_string, word, title, description, created_at) 
+                         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                        [seedString, word, title, description]
+                    );
+                    
+                    results.success.push({
+                        seedString,
+                        word,
+                        title
+                    });
+                    
+                    console.log(`✅ [管理员] "${seedString}" -> ${word}`);
+                    
+                } catch (error) {
+                    console.error(`❌ [管理员] 生成失败 "${seedString}":`, error.message);
+                    results.failed.push({
+                        seedString,
+                        error: error.message
+                    });
+                }
+            }
+            
+            return {
+                success: true,
+                message: `批量生成完成：成功 ${results.success.length}，失败 ${results.failed.length}，跳过 ${results.skipped.length}`,
+                results: results
+            };
+        }
+    });
+    
+    // 管理接口：获取所有题目列表
+    fastify.route({
+        method: 'GET',
+        url: '/admin/guess/questions',
+        handler: async (request, reply) => {
+            const ADMIN_KEY = process.env.ADMIN_KEY || '';
+            const adminKey = request.headers.authorization?.replace('Bearer ', '');
+
+            if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
+                return reply.code(401).send({ error: '未经授权' });
+            }
+            
+            try {
+                const questions = await db.all(
+                    `SELECT 
+                        gq.*,
+                        COUNT(DISTINCT gr.user_id) as player_count,
+                        COUNT(DISTINCT grs.user_id) as completed_count
+                     FROM guess_questions gq
+                     LEFT JOIN guess_records gr ON gq.id = gr.question_id
+                     LEFT JOIN guess_results grs ON gq.id = grs.question_id
+                     GROUP BY gq.id
+                     ORDER BY gq.created_at DESC`
+                );
+                
+                return {
+                    success: true,
+                    count: questions.length,
+                    questions: questions
+                };
+                
+            } catch (error) {
+                console.error('❌ [管理员] 获取题目列表失败:', error);
+                return reply.code(500).send({ 
+                    error: '获取题目列表失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // ========== 授权管理接口 ==========
+    
+    // 管理接口：授予用户出题权限
+    fastify.route({
+        method: 'POST',
+        url: '/admin/grant-creator',
+        handler: async (request, reply) => {
+            const ADMIN_KEY = process.env.ADMIN_KEY || '';
+            const adminKey = request.headers.authorization?.replace('Bearer ', '');
+
+            if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
+                return reply.code(401).send({ error: '未经授权' });
+            }
+
+            const { username } = request.body;
+            
+            if (!username || username.trim().length === 0) {
+                return reply.code(400).send({ error: '请提供用户名' });
+            }
+            
+            try {
+                // 查找用户
+                const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+                
+                if (!user) {
+                    return reply.code(404).send({ error: '用户不存在' });
+                }
+                
+                // 检查是否已经有权限
+                const existing = await db.get('SELECT * FROM question_creators WHERE user_id = ?', [user.id]);
+                
+                if (existing) {
+                    return reply.code(400).send({ error: '该用户已经拥有出题权限' });
+                }
+                
+                // 授予权限
+                await db.run(
+                    'INSERT INTO question_creators (user_id, granted_by) VALUES (?, ?)',
+                    [user.id, 'admin']
+                );
+                
+                console.log(`✅ [管理员] 授予用户 "${username}" 出题权限`);
+                
+                return {
+                    success: true,
+                    message: `已授予用户 "${username}" 出题权限`
+                };
+                
+            } catch (error) {
+                console.error('❌ [管理员] 授予权限失败:', error);
+                return reply.code(500).send({ 
+                    error: '授予权限失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 管理接口：撤销用户出题权限
+    fastify.route({
+        method: 'POST',
+        url: '/admin/revoke-creator',
+        handler: async (request, reply) => {
+            const ADMIN_KEY = process.env.ADMIN_KEY || '';
+            const adminKey = request.headers.authorization?.replace('Bearer ', '');
+
+            if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
+                return reply.code(401).send({ error: '未经授权' });
+            }
+
+            const { username } = request.body;
+            
+            if (!username || username.trim().length === 0) {
+                return reply.code(400).send({ error: '请提供用户名' });
+            }
+            
+            try {
+                // 查找用户
+                const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+                
+                if (!user) {
+                    return reply.code(404).send({ error: '用户不存在' });
+                }
+                
+                // 删除权限
+                const result = await db.run('DELETE FROM question_creators WHERE user_id = ?', [user.id]);
+                
+                if (result.changes === 0) {
+                    return reply.code(400).send({ error: '该用户没有出题权限' });
+                }
+                
+                console.log(`✅ [管理员] 撤销用户 "${username}" 的出题权限`);
+                
+                return {
+                    success: true,
+                    message: `已撤销用户 "${username}" 的出题权限`
+                };
+                
+            } catch (error) {
+                console.error('❌ [管理员] 撤销权限失败:', error);
+                return reply.code(500).send({ 
+                    error: '撤销权限失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 管理接口：获取所有有权限的用户
+    fastify.route({
+        method: 'GET',
+        url: '/admin/creators',
+        handler: async (request, reply) => {
+            const ADMIN_KEY = process.env.ADMIN_KEY || '';
+            const adminKey = request.headers.authorization?.replace('Bearer ', '');
+
+            if (!ADMIN_KEY || adminKey !== ADMIN_KEY) {
+                return reply.code(401).send({ error: '未经授权' });
+            }
+            
+            try {
+                const creators = await db.all(
+                    `SELECT u.username, qc.granted_by, qc.granted_at
+                     FROM question_creators qc
+                     JOIN users u ON qc.user_id = u.id
+                     ORDER BY qc.granted_at DESC`
+                );
+                
+                return {
+                    success: true,
+                    count: creators.length,
+                    creators: creators
+                };
+                
+            } catch (error) {
+                console.error('❌ [管理员] 获取授权用户列表失败:', error);
+                return reply.code(500).send({ 
+                    error: '获取授权用户列表失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 用户接口：检查自己的出题权限
+    fastify.route({
+        method: 'GET',
+        url: '/creator/status',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            try {
+                const creator = await db.get('SELECT * FROM question_creators WHERE user_id = ?', [user.id]);
+                
+                return {
+                    hasPermission: !!creator,
+                    grantedAt: creator ? creator.granted_at : null
+                };
+                
+            } catch (error) {
+                console.error('检查权限失败:', error);
+                return reply.code(500).send({ 
+                    error: '检查权限失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // ========== 用户出题接口 ==========
+    
+    // 用户接口：提交普通题目
+    fastify.route({
+        method: 'POST',
+        url: '/creator/submit-question',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            // 检查权限
+            const creator = await db.get('SELECT * FROM question_creators WHERE user_id = ?', [user.id]);
+            if (!creator) {
+                return reply.code(403).send({ error: '您没有出题权限' });
+            }
+            
+            const { seedString, title, description } = request.body;
+            
+            // 验证输入
+            if (!seedString || !title || !description) {
+                return reply.code(400).send({ error: '请提供完整的题目信息（种子字符串、标题、描述）' });
+            }
+            
+            if (seedString.trim().length === 0 || title.trim().length === 0 || description.trim().length === 0) {
+                return reply.code(400).send({ error: '题目信息不能为空' });
+            }
+            
+            // 限制种子字符串格式
+            if (seedString.startsWith('mc-')) {
+                return reply.code(400).send({ error: 'mc- 前缀保留给 Minecraft 题目，请使用普通种子字符串' });
+            }
+            
+            if (!/^[a-zA-Z0-9\-_]+$/.test(seedString)) {
+                return reply.code(400).send({ error: '种子字符串只能包含字母、数字、连字符和下划线' });
+            }
+            
+            try {
+                // 检查种子是否已存在
+                const existing = await db.get('SELECT * FROM guess_questions WHERE seed_string = ?', [seedString]);
+                
+                if (existing) {
+                    return reply.code(400).send({ error: '该种子字符串已被使用' });
+                }
+                
+                // 提取标题中的关键词作为答案
+                const word = title;
+                
+                // 存入数据库
+                await db.run(
+                    `INSERT INTO guess_questions (seed_string, word, title, description, created_at) 
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                    [seedString, word, title, description]
+                );
+                
+                const question = await db.get('SELECT * FROM guess_questions WHERE seed_string = ?', [seedString]);
+                
+                console.log(`✅ [用户出题] ${user.username} 创建了题目: ${seedString} -> ${word}`);
+                
+                return {
+                    success: true,
+                    message: '题目创建成功',
+                    question: {
+                        id: question.id,
+                        seedString: question.seed_string,
+                        word: question.word,
+                        title: question.title,
+                        description: question.description
+                    }
+                };
+                
+            } catch (error) {
+                console.error('创建题目失败:', error);
+                return reply.code(500).send({ 
+                    error: '创建题目失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+    
+    // 用户接口：提交 Minecraft 题目
+    fastify.route({
+        method: 'POST',
+        url: '/creator/submit-mc-question',
+        handler: async (request, reply) => {
+            const user = await authenticateUser(request, reply);
+            if (!user) return;
+            
+            // 检查权限
+            const creator = await db.get('SELECT * FROM question_creators WHERE user_id = ?', [user.id]);
+            if (!creator) {
+                return reply.code(403).send({ error: '您没有出题权限' });
+            }
+            
+            const { seedString, itemName, title, description } = request.body;
+            
+            // 验证输入
+            if (!seedString || !itemName || !title || !description) {
+                return reply.code(400).send({ error: '请提供完整的题目信息（种子字符串、物品名、标题、描述）' });
+            }
+            
+            if (seedString.trim().length === 0 || itemName.trim().length === 0 || 
+                title.trim().length === 0 || description.trim().length === 0) {
+                return reply.code(400).send({ error: '题目信息不能为空' });
+            }
+            
+            // MC 题目必须以 mc- 开头
+            if (!seedString.startsWith('mc-')) {
+                return reply.code(400).send({ error: 'Minecraft 题目的种子字符串必须以 mc- 开头' });
+            }
+            
+            if (!/^mc-[a-zA-Z0-9\-_]+$/.test(seedString)) {
+                return reply.code(400).send({ error: '种子字符串格式错误，应为 mc- 加字母、数字、连字符或下划线' });
+            }
+            
+            try {
+                // 检查种子是否已存在
+                const existing = await db.get('SELECT * FROM guess_questions WHERE seed_string = ?', [seedString]);
+                
+                if (existing) {
+                    return reply.code(400).send({ error: '该种子字符串已被使用' });
+                }
+                
+                // 使用物品名作为答案
+                const word = itemName;
+                
+                // 存入数据库
+                await db.run(
+                    `INSERT INTO guess_questions (seed_string, word, title, description, created_at) 
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                    [seedString, word, title, description]
+                );
+                
+                const question = await db.get('SELECT * FROM guess_questions WHERE seed_string = ?', [seedString]);
+                
+                console.log(`✅ [用户出题-MC] ${user.username} 创建了 Minecraft 题目: ${seedString} -> ${word}`);
+                
+                return {
+                    success: true,
+                    message: 'Minecraft 题目创建成功',
+                    question: {
+                        id: question.id,
+                        seedString: question.seed_string,
+                        word: question.word,
+                        title: question.title,
+                        description: question.description
+                    }
+                };
+                
+            } catch (error) {
+                console.error('创建 Minecraft 题目失败:', error);
+                return reply.code(500).send({ 
+                    error: '创建题目失败', 
+                    details: error.message 
+                });
+            }
+        }
+    });
+}
+

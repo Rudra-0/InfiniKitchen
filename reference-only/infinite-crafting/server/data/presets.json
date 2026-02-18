@@ -1,0 +1,95 @@
+{
+    "base_elements": [
+      { "id": "base_metal", "word_cn": "金", "word_en": "Metal", "emoji": "⚙️" },
+      { "id": "base_wood", "word_cn": "木", "word_en": "Wood", "emoji": "🌲" },
+      { "id": "base_water", "word_cn": "水", "word_en": "Water", "emoji": "💧" },
+      { "id": "base_fire", "word_cn": "火", "word_en": "Fire", "emoji": "🔥" },
+      { "id": "base_earth", "word_cn": "土", "word_en": "Earth", "emoji": "🌍" }
+    ],
+    "recipes": [
+      {
+        "element1_cn": "金",
+        "element2_cn": "金",
+        "result": { "word_cn": "财富", "word_en": "Fortune", "emoji": "💰" }
+      },
+      {
+        "element1_cn": "木",
+        "element2_cn": "木",
+        "result": { "word_cn": "森林", "word_en": "Forest", "emoji": "🌳" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "水",
+        "element2_cn": "水",
+        "result": { "word_cn": "海洋", "word_en": "Ocean", "emoji": "🌊" }
+      },
+      {
+        "element1_cn": "火",
+        "element2_cn": "火",
+        "result": { "word_cn": "爆炸", "word_en": "Explosion", "emoji": "💥" }
+      },
+      {
+        "element1_cn": "土",
+        "element2_cn": "土",
+        "result": { "word_cn": "山", "word_en": "Mountain", "emoji": "⛰️" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "金",
+        "element2_cn": "木",
+        "result": { "word_cn": "锯子", "word_en": "Saw", "emoji": "🪚" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "木",
+        "element2_cn": "水",
+        "result": { "word_cn": "植物", "word_en": "Plant", "emoji": "🌱" }
+      },
+      {
+        "element1_cn": "水",
+        "element2_cn": "火",
+        "result": { "word_cn": "蒸汽", "word_en": "Steam", "emoji": "💨" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "火",
+        "element2_cn": "土",
+        "result": { "word_cn": "砖", "word_en": "Brick", "emoji": "🧱" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "金",
+        "element2_cn": "水",
+        "result": { "word_cn": "水晶", "word_en": "Crystal", "emoji": "💎" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "木",
+        "element2_cn": "火",
+        "result": { "word_cn": "燃烧", "word_en": "Burning", "emoji": "🔥" }
+      },
+      {
+        "element1_cn": "水",
+        "element2_cn": "土",
+        "result": { "word_cn": "泥", "word_en": "Mud", "emoji": "🟫" }
+      },
+      {
+        "element1_cn": "金",
+        "element2_cn": "火",
+        "result": { "word_cn": "工具", "word_en": "Tool", "emoji": "🔧" },
+        "is_few_shot": true
+      },
+      {
+        "element1_cn": "木",
+        "element2_cn": "土",
+        "result": { "word_cn": "树", "word_en": "Tree", "emoji": "🌲" }
+      },
+      {
+        "element1_cn": "金",
+        "element2_cn": "土",
+        "result": { "word_cn": "宝石", "word_en": "Gem", "emoji": "💎" },
+        "is_few_shot": true
+      }
+    ]
+  }
+  

@@ -1,0 +1,25 @@
+{
+  "name": "opencraft",
+  "version": "2.1.0",
+  "description": "An open source clone of infinite craft - Chinese Version with Dual AI Mode",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "axios": "^1.6.7",
+    "fastify": "^4.26.2",
+    "path": "^0.12.7",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "url": "^0.11.3"
+  },
+  "optionalDependencies": {
+    "node-llama-cpp": "^2.8.8"
+  }
+}
