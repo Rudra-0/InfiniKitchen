@@ -25,8 +25,12 @@ class KitchenGame extends Forge2DGame with TapDetector, PanDetector {
     final worldBounds = Rect.fromLTRB(0, 0, 100, 100); // Abstract world bounds
     createBoundaries(worldBounds);
     
-    // Spawn a test ingredient
-    add(IngredientBody(initialPosition: Vector2(20, 10)));
+    // Spawn a test ingredient (Water)
+    add(IngredientBody(
+      initialPosition: Vector2(20, 10),
+      color: const Color(0xFF2196F3),
+      ingredientId: 'water',
+    ));
   }
 
   void spawnIngredient(dynamic data, Offset globalPosition, double sizeMultiplier) {
@@ -42,11 +46,13 @@ class KitchenGame extends Forge2DGame with TapDetector, PanDetector {
      
      // Extract color from data if possible, or random
      Color color = Colors.green;
+     String id = 'unknown';
+     
      if (data.runtimeType.toString() == 'IngredientData') {
-        // We'd cast it, but we need to import IngredientData effectively or use dynamic
-        // For now, let's trust it has a 'color' property or just use default.
         try {
-          color = Color((data as dynamic).color);
+          final d = data as dynamic;
+          color = Color(d.color);
+          id = d.id;
         } catch (e) {
           // ignore
         }
@@ -56,6 +62,7 @@ class KitchenGame extends Forge2DGame with TapDetector, PanDetector {
        initialPosition: worldPosition,
        radius: 2.5 * sizeMultiplier,
        color: color,
+       ingredientId: id,
      ));
   }
   
@@ -64,6 +71,20 @@ class KitchenGame extends Forge2DGame with TapDetector, PanDetector {
     children.whereType<IngredientBody>().forEach((body) {
       body.removeFromParent();
     });
+  }
+
+  /// Returns a list of ingredient IDs (e.g. 'flour', 'water') currently in the world
+  List<String> getCollectedIngredientIds() {
+    return children
+        .whereType<IngredientBody>()
+        .map((body) {
+           // We need to map back from color/body to ID? 
+           // Or store ID in IngredientBody.
+           // Currently IngredientBody has initialPosition and Color.
+           // We should store the ID in IngredientBody.
+           return body.ingredientId;
+        })
+        .toList();
   }
   
   void createBoundaries(Rect rect) {

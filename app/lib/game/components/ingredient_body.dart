@@ -7,11 +7,13 @@ class IngredientBody extends BodyComponent {
   final Vector2 initialPosition;
   final Color color;
   final double radius;
+  final String ingredientId;
 
   IngredientBody({
     required this.initialPosition,
     this.color = const Color(0xFF00FF00), // Default Green
     this.radius = 2.5,
+    this.ingredientId = 'unknown',
   });
 
   @override

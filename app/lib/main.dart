@@ -71,9 +71,9 @@ class GamePage extends ConsumerWidget {
           ),
           
           // Right: Sidebar
-          const SizedBox(
+          SizedBox(
             width: 300,
-            child: IngredientSidebar(),
+            child: IngredientSidebar(game: game),
           ),
         ],
       ),

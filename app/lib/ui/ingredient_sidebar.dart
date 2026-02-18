@@ -1,9 +1,13 @@
+import 'package:app/game/kitchen_game.dart';
+import 'package:app/logic/recipe_logic.dart';
 import 'package:app/state/discovery_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class IngredientSidebar extends ConsumerWidget {
-  const IngredientSidebar({super.key});
+  final KitchenGame game;
+
+  const IngredientSidebar({super.key, required this.game});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -24,7 +28,7 @@ class IngredientSidebar extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           
-          // Search Bar (Mock for now)
+          // Search Bar
           TextField(
             decoration: InputDecoration(
               hintText: 'Search...',
@@ -33,6 +37,9 @@ class IngredientSidebar extends ConsumerWidget {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
             style: const TextStyle(color: Colors.white),
+            onChanged: (val) {
+               // TODO: Filter logic
+            },
           ),
           const SizedBox(height: 16),
           
@@ -75,8 +82,32 @@ class IngredientSidebar extends ConsumerWidget {
             width: double.infinity,
             child: FloatingActionButton.extended(
               onPressed: () {
-                // TODO: Trigger Mix Logic
-                print("Mix button pressed!");
+                final ids = game.getCollectedIngredientIds();
+                if (ids.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Add ingredients first!')),
+                  );
+                  return;
+                }
+                
+                final result = RecipeLogic.checkRecipe(ids);
+                
+                if (result != null) {
+                  // Unlock discovery
+                  ref.read(discoveryProvider.notifier).unlock(result);
+                  
+                  // Clear and spawn result
+                  game.clearIngredients();
+                  game.spawnIngredient(result, const Offset(0,0), 1.5); // centered relative to world 0,0 approx
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Discovered: ${result.name} ${result.emoji}!'), backgroundColor: Colors.green),
+                  );
+                } else {
+                   ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No recipe found.'), backgroundColor: Colors.red),
+                  );
+                }
               },
               icon: const Icon(Icons.science),
               label: const Text('MIX'),
